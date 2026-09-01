@@ -1,0 +1,13 @@
+{
+  "items": [
+    { "id": "glasses-cloth", "name": "안경닦이", "remaining": 150 },
+    { "id": "towel", "name": "수건", "remaining": 200 },
+    { "id": "tumbler", "name": "텀블러", "remaining": 80 },
+    { "id": "bandana", "name": "반다나", "remaining": 30 },
+    { "id": "acrylic-keyring", "name": "아크릴키링", "remaining": 100 },
+    { "id": "acrylic-clip", "name": "아크릴집게", "remaining": 25 },
+    { "id": "sticker", "name": "스티커", "remaining": 30 },
+    { "id": "squishy", "name": "말랑이", "remaining": 30 }
+  ],
+  "draws": []
+}
