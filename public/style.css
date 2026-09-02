@@ -49,7 +49,8 @@ main{position:relative}
 .draw-area .action{min-height:42px}
 .draw-area .action p{margin:16px 0 0;font-size:14px}
 @media(max-width:720px){.draw-area{transform:none}}/* Lower the complete ball trajectory by exactly 10px */
-.draw-area .machine .ball{bottom:56px!important}.hero-stock .items article.sold-out{position:relative;overflow:hidden;background:#f2efea}
+.draw-area .machine .ball{bottom:56px!important}.quick-draw{position:fixed;left:20px;bottom:20px;z-index:90;border:0;border-radius:999px;padding:14px 22px;background:#172b48;color:#fff;font:15px 'Gowun Dodum';cursor:pointer;box-shadow:0 5px #0b192d}
+.quick-draw:disabled{opacity:.5;cursor:default}.hero-stock .items article.sold-out{position:relative;overflow:hidden;background:#f2efea}
 .hero-stock .items article.sold-out>span,.hero-stock .items article.sold-out>strong{opacity:.22}
 .hero-stock .items article.sold-out:after{content:'품절';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-10deg);z-index:2;padding:5px 14px;border:3px solid #e05d50;border-radius:9px;background:#fffdf2e8;color:#e05d50;font:700 26px/1 'Gowun Dodum';white-space:nowrap;box-shadow:0 3px 0 #b8463d}.hero-stock .items article.sold-out:after{display:none}
 .hero-stock .sold-out-sticker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-10deg);z-index:4;padding:5px 14px;border:3px solid #e05d50;border-radius:9px;background:#fffdf2;color:#e05d50;font:700 26px/1 'Gowun Dodum';white-space:nowrap;box-shadow:0 3px 0 #b8463d}
