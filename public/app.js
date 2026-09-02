@@ -219,8 +219,6 @@ function resetRound() {
   drawArea.classList.remove('is-dragging');
   setRotation(0);
   status.textContent = '손잡이를 시계 방향으로 두 바퀴 돌려주세요';
-  const quickDraw = $('#quick-draw');
-  if (quickDraw) quickDraw.disabled = false;
 }
 
 $('#close').onclick = resetRound;
@@ -231,15 +229,5 @@ document.addEventListener('keydown', event => {
     resetRound();
   }
 });
-$('#quick-draw').onclick = async event => {
-  if (completed) return;
-  event.currentTarget.disabled = true;
-  startReservation();
-  progress = 720;
-  setRotation(progress);
-  await finishRound();
-  if (!completed) event.currentTarget.disabled = false;
-};
-
 setRotation(0);
 load();

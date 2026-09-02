@@ -1,15 +1,17 @@
 import http from 'node:http';
-import { readFile, writeFile, copyFile } from 'node:fs/promises';
+import { readFile, writeFile, copyFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const pub = join(root, 'public');
-const file = join(root, 'data.json');
+const file = process.env.DATA_FILE ? resolve(process.env.DATA_FILE) : join(root, 'data.json');
 const seed = join(root, 'data.example.json');
 const port = process.env.PORT || 3000;
 const revealTimeoutMs = 60_000;
+const adminPassword = process.env.ADMIN_PASSWORD || '';
 const adminClients = new Set();
 const publicClients = new Set();
 const revealTimers = new Map();
@@ -29,6 +31,7 @@ function lock(task) {
 }
 
 async function getData() {
+  await mkdir(dirname(file), { recursive: true });
   if (!existsSync(file)) await copyFile(seed, file);
   return JSON.parse(await readFile(file, 'utf8'));
 }
@@ -80,6 +83,73 @@ function output(response, status, body, type = 'application/json; charset=utf-8'
   response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
   response.end(Buffer.isBuffer(body) || typeof body === 'string' ? body : JSON.stringify(body));
 }
+function isLoopback(request) {
+  const address = request.socket.remoteAddress || '';
+  return address === '127.0.0.1' || address === '::1' || address.endsWith('127.0.0.1');
+}
+
+function equalText(left, right) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function hasAdminAccess(request) {
+  if (!adminPassword) return isLoopback(request);
+  const authorization = request.headers.authorization || '';
+  if (!authorization.startsWith('Basic ')) return false;
+
+  try {
+    const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
+    const separator = decoded.indexOf(':');
+    if (separator < 0) return false;
+    const username = decoded.slice(0, separator);
+    const password = decoded.slice(separator + 1);
+    return equalText(username, 'admin') && equalText(password, adminPassword);
+  } catch (_) {
+    return false;
+  }
+}
+
+function requireAdmin(request, response) {
+  if (hasAdminAccess(request)) return true;
+
+  if (!adminPassword) {
+    output(response, 503, {
+      error: 'ADMIN_PASSWORD가 설정되지 않아 원격 관리자 기능을 사용할 수 없습니다.'
+    });
+    return false;
+  }
+
+  response.writeHead(401, {
+    'WWW-Authenticate': 'Basic realm="Roulette Admin", charset="UTF-8"',
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store'
+  });
+  response.end('관리자 인증이 필요합니다.');
+  return false;
+}
+
+function openEventStream(clients, initialState, request, response) {
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  clients.add(response);
+  response.write('event: state\ndata: ' + JSON.stringify(initialState) + '\n\n');
+
+  const heartbeat = setInterval(() => response.write(': heartbeat\n\n'), 20_000);
+  heartbeat.unref?.();
+
+  const close = () => {
+    clearInterval(heartbeat);
+    clients.delete(response);
+  };
+  request.once('close', close);
+  response.once('error', close);
+}
 
 async function readBody(request) {
   let body = '';
@@ -130,6 +200,19 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
 
   try {
+    if (url.pathname === '/health' && request.method === 'GET') {
+      return output(response, 200, 'ok', 'text/plain; charset=utf-8');
+    }
+
+    const adminRoute = [
+      '/admin.html',
+      '/admin.js',
+      '/api/state',
+      '/api/events',
+      '/api/items'
+    ].includes(url.pathname);
+    if (adminRoute && !requireAdmin(request, response)) return;
+
     if (url.pathname === '/api/state' && request.method === 'GET') {
       return output(response, 200, await getData());
     }
@@ -139,26 +222,12 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (url.pathname === '/api/events' && request.method === 'GET') {
-      response.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive'
-      });
-      adminClients.add(response);
-      response.write('event: state\ndata: ' + JSON.stringify(await getData()) + '\n\n');
-      request.on('close', () => adminClients.delete(response));
+      openEventStream(adminClients, await getData(), request, response);
       return;
     }
 
     if (url.pathname === '/api/public-events' && request.method === 'GET') {
-      response.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive'
-      });
-      publicClients.add(response);
-      response.write('event: state\ndata: ' + JSON.stringify(toPublicState(await getData())) + '\n\n');
-      request.on('close', () => publicClients.delete(response));
+      openEventStream(publicClients, toPublicState(await getData()), request, response);
       return;
     }
 
@@ -172,7 +241,7 @@ const server = http.createServer(async (request, response) => {
 
         prize.remaining--;
         const result = {
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           itemId: prize.id,
           itemName: prize.name,
           drawnAt: new Date().toISOString(),
