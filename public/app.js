@@ -46,11 +46,11 @@ function render(data) {
 }
 
 async function load() {
-  const response = await fetch('/api/state');
+  const response = await fetch('/api/public-state');
   render(await response.json());
 }
 
-const events = new EventSource('/api/events');
+const events = new EventSource('/api/public-events');
 events.addEventListener('state', event => render(JSON.parse(event.data)));
 
 function setRotation(degrees) {
@@ -75,7 +75,6 @@ async function reservePrize() {
     const response = await fetch('/api/draw', { method: 'POST' });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
-    render(data.state);
     colorBall(data.result.itemId);
     if (progress === 0) status.textContent = '시계 방향으로 두 바퀴 돌려주세요';
     return data;
@@ -111,6 +110,41 @@ function stopDragging(event) {
   }
 }
 
+async function revealResult(drawId) {
+  const response = await fetch('/api/reveal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ drawId })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error);
+  render(data.state);
+  return data.state;
+}
+
+function showLocalDecrement(itemId) {
+  const fallback = {
+    ...state,
+    items: state.items.map(item =>
+      item.id === itemId
+        ? { ...item, remaining: Math.max(0, item.remaining - 1) }
+        : item
+    )
+  };
+  render(fallback);
+  return fallback;
+}
+
+async function retryReveal(drawId, attempts = 0) {
+  try {
+    await revealResult(drawId);
+  } catch (_) {
+    if (attempts < 4) {
+      setTimeout(() => retryReveal(drawId, attempts + 1), 1500 * (attempts + 1));
+    }
+  }
+}
+
 async function finishRound() {
   if (completed) return;
   completed = true;
@@ -125,8 +159,16 @@ async function finishRound() {
     ball.classList.remove('eject');
     void ball.offsetWidth;
     setTimeout(() => ball.classList.add('eject'), 100);
-    setTimeout(() => {
-      const item = data.state.items.find(entry => entry.id === data.result.itemId);
+    setTimeout(async () => {
+      let visibleState;
+      try {
+        visibleState = await revealResult(data.result.id);
+      } catch (_) {
+        visibleState = showLocalDecrement(data.result.itemId);
+        retryReveal(data.result.id);
+      }
+
+      const item = visibleState.items.find(entry => entry.id === data.result.itemId);
       $('#prize').textContent = data.result.itemName;
       $('#left').textContent = '남은 수량 ' + item.remaining + '개';
       modal.hidden = false;
@@ -136,7 +178,6 @@ async function finishRound() {
     completed = false;
   }
 }
-
 handle.addEventListener('pointerdown', event => {
   if (completed || event.button !== 0) return;
   event.preventDefault();
