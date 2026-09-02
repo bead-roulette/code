@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>관리자 로그인 · LUCKY DRAW</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono&family=Fredoka:wght@600;700&family=Gowun+Dodum&display=swap');
+    :root{--ink:#172b48;--coral:#ff6958;--mint:#d9f0f3;--paper:#fffdf7}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--paper);color:var(--ink);font-family:'Gowun Dodum',sans-serif}
+    .card{width:min(430px,100%);padding:44px 40px;border-radius:30px;background:var(--mint);box-shadow:0 20px 60px #172b481a}
+    .eyebrow{margin:0 0 12px;color:var(--coral);font:13px 'DM Mono';letter-spacing:1.5px}
+    h1{margin:0 0 10px;font:700 42px/1 'Fredoka',sans-serif;letter-spacing:1px}
+    .description{margin:0 0 30px;color:#58657a;line-height:1.7}
+    label{display:block;margin:16px 0 7px;font-size:14px}
+    input{width:100%;border:1px solid #bdd3d6;border-radius:12px;padding:14px 15px;background:#fff;color:var(--ink);font:16px 'Gowun Dodum'}
+    button{width:100%;margin-top:24px;border:0;border-radius:999px;padding:16px;background:var(--coral);color:#fff;font:17px 'Gowun Dodum';cursor:pointer;box-shadow:0 7px #d65346}
+    .error{display:none;margin:18px 0 0;color:#bd3e35;text-align:center}
+    .error.visible{display:block}
+    a{display:block;margin-top:24px;text-align:center;color:var(--ink)}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <p class="eyebrow">CONTROL ROOM</p>
+    <h1>관리자 로그인</h1>
+    <p class="description">재고와 직전 추첨 기록을 확인하려면 로그인해 주세요.</p>
+    <form action="/api/admin/login" method="post">
+      <label for="username">사용자 이름</label>
+      <input id="username" name="username" value="admin" autocomplete="username" required>
+      <label for="password">비밀번호</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+      <button type="submit">관리자 페이지 열기</button>
+      <p id="error" class="error">사용자 이름 또는 비밀번호가 올바르지 않습니다.</p>
+    </form>
+    <a href="/">추첨 화면으로 돌아가기</a>
+  </main>
+  <script>
+    if (new URLSearchParams(location.search).has('error')) {
+      document.querySelector('#error').classList.add('visible');
+    }
+  </script>
+</body>
+</html>

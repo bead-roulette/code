@@ -3,7 +3,7 @@ import { readFile, writeFile, copyFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, extname, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const pub = join(root, 'public');
@@ -12,6 +12,7 @@ const seed = join(root, 'data.example.json');
 const port = process.env.PORT || 3000;
 const revealTimeoutMs = 60_000;
 const adminPassword = process.env.ADMIN_PASSWORD || '';
+const adminSessionMaxAgeSeconds = 12 * 60 * 60;
 const adminClients = new Set();
 const publicClients = new Set();
 const revealTimers = new Map();
@@ -94,8 +95,50 @@ function equalText(left, right) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+function adminSessionSignature(issuedAt) {
+  return createHmac('sha256', adminPassword)
+    .update('roulette-admin-session:' + issuedAt)
+    .digest('base64url');
+}
+
+function createAdminSession() {
+  const issuedAt = Math.floor(Date.now() / 1000).toString(36);
+  return issuedAt + '.' + adminSessionSignature(issuedAt);
+}
+
+function getCookie(request, name) {
+  const cookieHeader = request.headers.cookie || '';
+  for (const part of cookieHeader.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0) continue;
+    const key = part.slice(0, separator).trim();
+    if (key === name) return part.slice(separator + 1).trim();
+  }
+  return '';
+}
+
+function hasAdminSession(request) {
+  if (!adminPassword) return false;
+  const token = getCookie(request, 'roulette_admin');
+  const separator = token.indexOf('.');
+  if (separator < 1) return false;
+
+  const issuedAt = token.slice(0, separator);
+  const signature = token.slice(separator + 1);
+  const issuedAtSeconds = Number.parseInt(issuedAt, 36);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (
+    !Number.isFinite(issuedAtSeconds) ||
+    issuedAtSeconds > nowSeconds + 60 ||
+    nowSeconds - issuedAtSeconds > adminSessionMaxAgeSeconds
+  ) return false;
+
+  return equalText(signature, adminSessionSignature(issuedAt));
+}
+
 function hasAdminAccess(request) {
   if (!adminPassword) return isLoopback(request);
+  if (hasAdminSession(request)) return true;
   const authorization = request.headers.authorization || '';
   if (!authorization.startsWith('Basic ')) return false;
 
@@ -157,6 +200,32 @@ async function readBody(request) {
   return JSON.parse(body || '{}');
 }
 
+async function readFormBody(request) {
+  let body = '';
+  for await (const part of request) body += part;
+  return new URLSearchParams(body);
+}
+
+function isSecureRequest(request) {
+  return request.socket.encrypted || request.headers['x-forwarded-proto'] === 'https';
+}
+
+function adminCookie(request, value, maxAge) {
+  return [
+    'roulette_admin=' + value,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Strict',
+    'Max-Age=' + maxAge,
+    isSecureRequest(request) ? 'Secure' : ''
+  ].filter(Boolean).join('; ');
+}
+
+function redirect(response, location, headers = {}) {
+  response.writeHead(303, { Location: location, 'Cache-Control': 'no-store', ...headers });
+  response.end();
+}
+
 function pickPrize(items) {
   const available = items.filter(item => item.remaining > 0);
   const total = available.reduce((sum, item) => sum + item.remaining, 0);
@@ -204,8 +273,36 @@ const server = http.createServer(async (request, response) => {
       return output(response, 200, 'ok', 'text/plain; charset=utf-8');
     }
 
+    if (url.pathname === '/api/admin/login' && request.method === 'POST') {
+      const form = await readFormBody(request);
+      const username = form.get('username') || '';
+      const password = form.get('password') || '';
+      const valid = adminPassword &&
+        equalText(username, 'admin') &&
+        equalText(password, adminPassword);
+
+      if (!valid) return redirect(response, '/admin-login.html?error=1');
+
+      return redirect(response, '/admin.html', {
+        'Set-Cookie': adminCookie(
+          request,
+          createAdminSession(),
+          adminSessionMaxAgeSeconds
+        )
+      });
+    }
+
+    if (url.pathname === '/api/admin/logout' && request.method === 'POST') {
+      return redirect(response, '/', {
+        'Set-Cookie': adminCookie(request, '', 0)
+      });
+    }
+
+    if (url.pathname === '/admin.html' && !hasAdminAccess(request)) {
+      return redirect(response, '/admin-login.html');
+    }
+
     const adminRoute = [
-      '/admin.html',
       '/admin.js',
       '/api/state',
       '/api/events',
